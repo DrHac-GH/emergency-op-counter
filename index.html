@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>緊急手術 参加記録カウンター</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>緊急手術 参加記録カウンター</h1>
+      <p class="subtitle">誰が何回入ったかを記録・見える化</p>
+    </header>
+
+    <main>
+      <nav class="tabs">
+        <button class="tab active" data-tab="log">記録する</button>
+        <button class="tab" data-tab="stats">集計・可視化</button>
+        <button class="tab" data-tab="settings">設定・入出力</button>
+      </nav>
+
+      <section id="tab-log" class="tab-panel active">
+        <h2>記録を追加</h2>
+        <form id="log-form">
+          <div class="field">
+            <label for="doctor">医師</label>
+            <div class="inline">
+              <select id="doctor" required></select>
+              <input id="new-doctor" type="text" placeholder="医師名を追加" />
+              <button type="button" id="add-doctor">追加</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="datetime">日時</label>
+            <input id="datetime" type="datetime-local" required />
+          </div>
+          <div class="field">
+            <label for="note">メモ（任意）</label>
+            <input id="note" type="text" placeholder="症例名など" />
+          </div>
+          <div class="actions">
+            <button type="submit">記録する</button>
+            <button type="button" id="clear-form" class="secondary">クリア</button>
+          </div>
+        </form>
+
+        <h3>最近の記録</h3>
+        <div class="table-wrap">
+          <table id="logs-table">
+            <thead>
+              <tr>
+                <th>日時</th>
+                <th>医師</th>
+                <th>メモ</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-stats" class="tab-panel">
+        <h2>集計・可視化</h2>
+        <div class="filters">
+          <div class="field">
+            <label>期間</label>
+            <input type="date" id="from-date" />
+            <span>〜</span>
+            <input type="date" id="to-date" />
+            <button id="apply-filter">反映</button>
+            <button id="reset-filter" class="secondary">リセット</button>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <h3>医師別 回数</h3>
+            <div class="table-wrap">
+              <table id="summary-table">
+                <thead>
+                  <tr>
+                    <th data-sort="doctor">医師</th>
+                    <th data-sort="count">回数</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h3>バー・チャート</h3>
+            <canvas id="chart" width="640" height="360" aria-label="回数チャート"></canvas>
+          </div>
+        </div>
+
+        <div class="stats-line" id="stats-line"></div>
+      </section>
+
+      <section id="tab-settings" class="tab-panel">
+        <h2>設定・入出力</h2>
+        <div class="card">
+          <h3>医師リスト</h3>
+          <div class="inline">
+            <input id="bulk-doctors" type="text" placeholder="カンマ区切りで複数追加（例: 田中,佐藤,鈴木）" />
+            <button id="bulk-add">一括追加</button>
+            <button id="clear-doctors" class="danger">医師リストを初期化</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>データ入出力</h3>
+          <div class="io">
+            <button id="export-json">JSONを書き出し</button>
+            <button id="export-csv">CSVを書き出し</button>
+          </div>
+          <div class="io">
+            <label class="file">
+              <input type="file" id="import-json" accept="application/json,.json" />
+              JSONを読み込む
+            </label>
+            <label class="file">
+              <input type="file" id="import-csv" accept="text/csv,.csv" />
+              CSVを読み込む
+            </label>
+          </div>
+          <p class="hint">CSV列: datetime(ISO),doctor,note</p>
+          <button id="clear-logs" class="danger">全記録を削除</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <small>ローカル保存（この端末のブラウザに保存）/ バックアップはエクスポートをご利用ください</small>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>
