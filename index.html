@@ -9,14 +9,15 @@
   <body>
     <header>
       <h1>緊急手術 参加記録カウンター</h1>
-      <p class="subtitle">誰が何回入ったかを記録・見える化</p>
+      <p class="subtitle">誰が何回緊急手術に入ったかを記録・見える化！</p>
     </header>
 
     <main>
       <nav class="tabs">
         <button class="tab active" data-tab="log">記録する</button>
-        <button class="tab" data-tab="stats">集計・可視化</button>
-        <button class="tab" data-tab="settings">設定・入出力</button>
+        <button class="tab" data-tab="stats">集計</button>
+        <button class="tab" data-tab="settings">設定</button>
+        <button class="tab" data-tab="admin">管理</button>
       </nav>
 
       <section id="tab-log" class="tab-panel active">
@@ -61,7 +62,7 @@
       </section>
 
       <section id="tab-stats" class="tab-panel">
-        <h2>集計・可視化</h2>
+        <h2>集計</h2>
 
         <div class="card">
           <h3>過去1週間</h3>
@@ -141,10 +142,46 @@
         </div>
 
         <div class="stats-line" id="stats-line"></div>
+
+        <div class="card" style="margin-top:16px">
+          <h3>過去ログ検索（期間で一覧）</h3>
+          <div class="field">
+            <label>期間を指定</label>
+            <input type="date" id="search-from" />
+            <span>〜</span>
+            <input type="date" id="search-to" />
+            <button id="search-logs">検索</button>
+            <button id="search-reset" class="secondary">クリア</button>
+          </div>
+          <div class="io">
+            <button id="export-search-csv">検索結果をCSVで書き出し</button>
+          </div>
+          <div class="table-wrap">
+            <table id="search-logs-table">
+              <thead>
+                <tr>
+                  <th>日時</th>
+                  <th>医師</th>
+                  <th>メモ</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section id="tab-settings" class="tab-panel">
-        <h2>設定・入出力</h2>
+        <h2>設定</h2>
+        <div class="card">
+          <h3>端末設定</h3>
+          <div class="field inline">
+            <label for="operator-name" style="min-width:110px">操作者名</label>
+            <input id="operator-name" type="text" placeholder="例: 田中(当直)" style="max-width:260px" />
+            <button id="save-operator">保存</button>
+            <span class="hint">サーバーモードでの監査ログに記録されます</span>
+          </div>
+        </div>
         <div class="card">
           <h3>医師リスト</h3>
           <div class="inline">
@@ -159,17 +196,16 @@
           </div>
         </div>
 
+      </section>
+
+      <section id="tab-admin" class="tab-panel">
+        <h2>管理</h2>
         <div class="card">
           <h3>データ入出力</h3>
           <div class="io">
-            <button id="export-json">JSONを書き出し</button>
             <button id="export-csv">CSVを書き出し</button>
           </div>
           <div class="io">
-            <label class="file">
-              <input type="file" id="import-json" accept="application/json,.json" />
-              JSONを読み込む
-            </label>
             <label class="file">
               <input type="file" id="import-csv" accept="text/csv,.csv" />
               CSVを読み込む
@@ -177,6 +213,28 @@
           </div>
           <p class="hint">CSV列: datetime(ISO),doctor,note（doctorは「;」区切りで複数可）</p>
           <button id="clear-logs" class="danger">全記録を削除</button>
+        </div>
+
+        <div class="card">
+          <h3>監査ログ</h3>
+          <div class="inline">
+            <button id="refresh-audit">更新</button>
+            <a id="export-audit" class="button-like" href="#">CSVを書き出し</a>
+            <span class="hint">サーバーモード時のみ利用できます</span>
+          </div>
+          <div class="table-wrap">
+            <table id="audit-table">
+              <thead>
+                <tr>
+                  <th>時刻</th>
+                  <th>操作者</th>
+                  <th>操作</th>
+                  <th>詳細</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>
