@@ -28,11 +28,11 @@
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2,'0');
-    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}時`;
   };
   const nowLocalDatetime = () => {
     const d = new Date();
-    d.setSeconds(0,0);
+    d.setMinutes(0,0,0);
     const pad = (n) => String(n).padStart(2,'0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
@@ -44,9 +44,9 @@
   const todayDate = () => new Date().toISOString().slice(0,10);
 
   // DOM refs
-  const doctorSel = $('#doctor');
-  const newDoctorInput = $('#new-doctor');
-  const addDoctorBtn = $('#add-doctor');
+  const doctorList = $('#doctor-list');
+  const doctorManageList = $('#doctor-manage-list');
+  const clearSelectionBtn = $('#clear-selection');
   const bulkDoctorsInput = $('#bulk-doctors');
   const bulkAddBtn = $('#bulk-add');
   const clearDoctorsBtn = $('#clear-doctors');
@@ -56,6 +56,8 @@
   const clearFormBtn = $('#clear-form');
   const logsTableBody = $('#logs-table tbody');
   const summaryBody = $('#summary-table tbody');
+  const summaryBody1w = $('#summary-table-1w tbody');
+  const summaryBody1m = $('#summary-table-1m tbody');
   const summaryHeaders = $$('#summary-table th[data-sort]');
   const fromDate = $('#from-date');
   const toDate = $('#to-date');
@@ -63,6 +65,10 @@
   const resetFilterBtn = $('#reset-filter');
   const statsLine = $('#stats-line');
   const chart = $('#chart');
+  const chart1w = $('#chart-1w');
+  const chart1m = $('#chart-1m');
+  const statsLine1w = $('#stats-line-1w');
+  const statsLine1m = $('#stats-line-1m');
   const exportJsonBtn = $('#export-json');
   const exportCsvBtn = $('#export-csv');
   const importJsonInput = $('#import-json');
@@ -78,19 +84,36 @@
   function renderDoctors(){
     // Ensure unique and sorted by name
     doctors = uniq(doctors).sort((a,b)=>a.localeCompare(b,'ja'));
-    doctorSel.innerHTML = doctors.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+    // keep current selections
+    const selected = new Set(Array.from(doctorList.querySelectorAll('input[type="checkbox"]:checked')).map(i=>i.value));
+    doctorList.innerHTML = doctors.map(d => `
+      <label><input type="checkbox" value="${escapeHtml(d)}"> ${escapeHtml(d)}</label>
+    `).join('');
+    // restore selections
+    doctorList.querySelectorAll('input[type="checkbox"]').forEach(ch => { ch.checked = selected.has(ch.value); });
+    // settings 管理リスト
+    if (doctorManageList) {
+      doctorManageList.innerHTML = doctors.length
+        ? doctors.map(d => `
+            <span class="chip">${escapeHtml(d)} <button class="chip-del" data-del-doctor="${escapeHtml(d)}" title="削除">×</button></span>
+          `).join('')
+        : '<span class="hint">登録なし</span>';
+    }
     save(storageKeys.doctors, doctors);
   }
 
   function renderLogs(){
-    const rows = [...logs].sort((a,b)=> b.datetime.localeCompare(a.datetime)).map(l => `
+    const rows = [...logs].sort((a,b)=> b.datetime.localeCompare(a.datetime)).map(l => {
+      const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
+      const doctorText = ds.join('、');
+      return `
       <tr data-id="${l.id}">
         <td>${escapeHtml(formatDate(l.datetime))}</td>
-        <td>${escapeHtml(l.doctor)}</td>
+        <td>${escapeHtml(doctorText)}</td>
         <td>${escapeHtml(l.note||'')}</td>
         <td style="text-align:right"><button class="del-btn" data-del="${l.id}">削除</button></td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
     logsTableBody.innerHTML = rows || '<tr><td colspan="4" style="color:#9fb3c8">記録はまだありません</td></tr>';
     // Bind delete
     logsTableBody.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => deleteLog(btn.dataset.del)));
@@ -107,10 +130,22 @@
     });
   }
 
+  function getFilteredLogsRange(f, t){
+    return logs.filter(l => {
+      const d = new Date(l.datetime);
+      if (f && d < f) return false;
+      if (t && d > t) return false;
+      return true;
+    });
+  }
+
   function renderSummary(){
     const filtered = getFilteredLogs();
     const counts = new Map();
-    filtered.forEach(l => counts.set(l.doctor, (counts.get(l.doctor)||0)+1));
+    filtered.forEach(l => {
+      const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
+      ds.forEach(d => counts.set(d, (counts.get(d)||0)+1));
+    });
     let list = Array.from(counts.entries()).map(([doctor,count]) => ({doctor,count}));
     // sort
     list.sort((a,b)=>{
@@ -122,12 +157,13 @@
     });
     summaryBody.innerHTML = list.map(r => `<tr><td>${escapeHtml(r.doctor)}</td><td>${r.count}</td></tr>`).join('') || '<tr><td colspan="2" style="color:#9fb3c8">データなし</td></tr>';
     statsLine.textContent = `期間内の総件数: ${filtered.length} 件 / 医師数: ${counts.size}`;
-    drawChart(list);
+    drawChart(chart, list);
   }
 
-  function drawChart(list){
-    const ctx = chart.getContext('2d');
-    const w = chart.width, h = chart.height;
+  function drawChart(canvas, list){
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
     ctx.clearRect(0,0,w,h);
     // padding
     const pad = { t: 20, r: 16, b: 40, l: 100 };
@@ -171,14 +207,45 @@
     });
   }
 
+  function renderQuickRange(title, tbodyEl, canvasEl, statsEl, days){
+    // days: number of days back inclusive (e.g., 7 for 1w, 30 for 1m)
+    const end = new Date(); end.setHours(23,59,59,999);
+    const start = new Date(end); start.setDate(end.getDate() - (days - 1)); start.setHours(0,0,0,0);
+    const filtered = getFilteredLogsRange(start, end);
+    const counts = new Map();
+    filtered.forEach(l => {
+      const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
+      ds.forEach(d => counts.set(d, (counts.get(d)||0)+1));
+    });
+    const list = Array.from(counts.entries()).map(([doctor,count]) => ({doctor,count}))
+      .sort((a,b)=> b.count - a.count);
+    if (tbodyEl) {
+      tbodyEl.innerHTML = list.map(r => `<tr><td>${escapeHtml(r.doctor)}</td><td>${r.count}</td></tr>`).join('') || '<tr><td colspan="2" style="color:#9fb3c8">データなし</td></tr>';
+    }
+    if (statsEl) {
+      statsEl.textContent = `${title}: 総件数 ${filtered.length} 件 / 医師数 ${counts.size}`;
+    }
+    drawChart(canvasEl, list);
+  }
+
   // Actions
-  addDoctorBtn.addEventListener('click', () => {
-    const name = (newDoctorInput.value||'').trim();
-    if (!name) return;
-    doctors.push(name);
-    newDoctorInput.value = '';
-    renderDoctors();
+  clearSelectionBtn.addEventListener('click', () => {
+    doctorList.querySelectorAll('input[type="checkbox"]').forEach(ch => ch.checked = false);
   });
+
+  // 個別削除（設定タブ）
+  if (doctorManageList) {
+    doctorManageList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-del-doctor]');
+      if (!btn) return;
+      const name = btn.getAttribute('data-del-doctor');
+      if (!name) return;
+      if (!confirm(`「${name}」を医師リストから削除します。既存の記録は残ります。よろしいですか？`)) return;
+      doctors = doctors.filter(d => d !== name);
+      save(storageKeys.doctors, doctors);
+      renderDoctors();
+    });
+  }
 
   bulkAddBtn.addEventListener('click', () => {
     const text = (bulkDoctorsInput.value||'').trim();
@@ -202,21 +269,28 @@
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const doctor = doctorSel.value || (newDoctorInput.value||'').trim();
+    const selectedDoctors = Array.from(doctorList.querySelectorAll('input[type="checkbox"]:checked')).map(i=>i.value);
     const datetime = dtInput.value ? new Date(dtInput.value) : new Date();
-    if (!doctor) { alert('医師を選択または追加してください'); return; }
+    // 分は扱わない（時単位）。入力が分付きでも切り捨てる。
+    datetime.setMinutes(0,0,0);
+    if (selectedDoctors.length === 0) { alert('参加医師を1名以上選択してください'); return; }
     if (Number.isNaN(datetime.getTime())) { alert('日時が不正です'); return; }
     const note = (noteInput.value||'').trim();
     const iso = new Date(datetime.getTime() - datetime.getTimezoneOffset()*60000).toISOString();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-    logs.push({ id, datetime: iso, doctor, note });
-    // ensure doctor exists
-    if (!doctors.includes(doctor)) { doctors.push(doctor); renderDoctors(); }
+    logs.push({ id, datetime: iso, doctors: selectedDoctors, note });
+    // ensure doctors exist
+    let changed = false;
+    selectedDoctors.forEach(d => { if (!doctors.includes(d)) { doctors.push(d); changed = true; } });
+    if (changed) renderDoctors();
     save(storageKeys.logs, logs);
     renderLogs();
     renderSummary();
+    renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+    renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     noteInput.value = '';
     dtInput.value = nowLocalDatetime();
+    doctorList.querySelectorAll('input[type="checkbox"]').forEach(ch => ch.checked = false);
   });
 
   function deleteLog(id){
@@ -225,6 +299,8 @@
     save(storageKeys.logs, logs);
     renderLogs();
     renderSummary();
+    renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+    renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
   }
 
   // Sorting summary
@@ -250,7 +326,11 @@
   });
   exportCsvBtn.addEventListener('click', () => {
     const lines = [ ['datetime','doctor','note'].join(',') ];
-    logs.forEach(l => lines.push([l.datetime, l.doctor, l.note||''].map(csvEscape).join(',')));
+    logs.forEach(l => {
+      const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
+      const doctorCell = ds.join(';');
+      lines.push([l.datetime, doctorCell, l.note||''].map(csvEscape).join(','));
+    });
     downloadFile('eop-logs.csv', new Blob([lines.join('\n')], {type:'text/csv'}));
   });
 
@@ -263,10 +343,17 @@
       if (!Array.isArray(data.doctors) || !Array.isArray(data.logs)) throw new Error('invalid');
       if (!confirm('読み込んだJSONでデータを置き換えます。よろしいですか？')) return;
       doctors = uniq(data.doctors);
-      logs = data.logs.filter(v => v && v.datetime && v.doctor).map(v => ({ id: v.id || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`, datetime: v.datetime, doctor: v.doctor, note: v.note||'' }));
+      logs = data.logs.filter(v => v && v.datetime && (v.doctor || (Array.isArray(v.doctors) && v.doctors.length))).map(v => ({
+        id: v.id || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+        datetime: v.datetime,
+        doctors: Array.isArray(v.doctors) ? v.doctors : (v.doctor ? [v.doctor] : []),
+        note: v.note||''
+      }));
       save(storageKeys.doctors, doctors);
       save(storageKeys.logs, logs);
       renderDoctors(); renderLogs(); renderSummary();
+      renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+      renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     } catch(err) {
       alert('JSONの読み込みに失敗しました');
     } finally {
@@ -288,19 +375,26 @@
       const idxNote = header.indexOf('note');
       if (idxDatetime < 0 || idxDoctor < 0) throw new Error('header');
       if (!confirm('読み込んだCSVで記録を置き換えます。よろしいですか？')) return;
-      const newLogs = rows.map(cols => ({
-        id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
-        datetime: cols[idxDatetime],
-        doctor: cols[idxDoctor],
-        note: idxNote >= 0 ? (cols[idxNote]||'') : ''
-      })).filter(v => v.datetime && v.doctor);
+      const newLogs = rows.map(cols => {
+        const raw = cols[idxDoctor] || '';
+        const parts = raw.split(/[;]+/).map(s=>s.trim()).filter(Boolean);
+        const doctorsArr = parts.length ? parts : raw.split(',').map(s=>s.trim()).filter(Boolean);
+        return {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+          datetime: cols[idxDatetime],
+          doctors: doctorsArr,
+          note: idxNote >= 0 ? (cols[idxNote]||'') : ''
+        };
+      }).filter(v => v.datetime && v.doctors && v.doctors.length);
       logs = newLogs;
       // update doctors as union
-      const importedDoctors = uniq(newLogs.map(l => l.doctor));
+      const importedDoctors = uniq(newLogs.flatMap(l => l.doctors));
       doctors = uniq([...doctors, ...importedDoctors]);
       save(storageKeys.doctors, doctors);
       save(storageKeys.logs, logs);
       renderDoctors(); renderLogs(); renderSummary();
+      renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+      renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     } catch(err) {
       alert('CSVの読み込みに失敗しました');
     } finally {
@@ -312,7 +406,7 @@
     if (!confirm('全記録を削除します。よろしいですか？')) return;
     logs = [];
     save(storageKeys.logs, logs);
-    renderLogs(); renderSummary();
+    renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
   });
 
   function escapeHtml(s){
@@ -362,5 +456,6 @@
   renderDoctors();
   renderLogs();
   renderSummary();
+  renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+  renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
 })();
-

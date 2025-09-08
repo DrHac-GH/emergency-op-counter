@@ -23,6 +23,14 @@ select{max-width:260px}
 input[type="datetime-local"], input[type="date"]{max-width:220px}
 
 .inline{display:flex;gap:8px;align-items:center}
+.checklist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.checklist label{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:8px}
+.checklist input[type="checkbox"]{accent-color:var(--accent)}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:999px}
+.chip-del{background:#3a2a2a;border:1px solid #5b3c3c;color:#f4c7c7;padding:2px 8px;border-radius:999px;cursor:pointer}
+.chip-del:hover{background:#4a3434}
 .actions{display:flex;gap:8px;margin-top:12px}
 button{background:var(--accent);border:none;color:#053217;padding:8px 12px;border-radius:8px;cursor:pointer}
 button.secondary{background:#31435a;color:#d8e3ef}

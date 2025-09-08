@@ -23,16 +23,16 @@
         <h2>記録を追加</h2>
         <form id="log-form">
           <div class="field">
-            <label for="doctor">医師</label>
+            <label>参加医師（複数選択可）</label>
+            <div id="doctor-list" class="checklist"></div>
             <div class="inline">
-              <select id="doctor" required></select>
-              <input id="new-doctor" type="text" placeholder="医師名を追加" />
-              <button type="button" id="add-doctor">追加</button>
+              <button type="button" id="clear-selection" class="secondary">選択をクリア</button>
+              <span class="hint">医師の追加は「設定」で行います</span>
             </div>
           </div>
           <div class="field">
-            <label for="datetime">日時</label>
-            <input id="datetime" type="datetime-local" required />
+            <label for="datetime">手術終了時刻</label>
+            <input id="datetime" type="datetime-local" step="3600" required />
           </div>
           <div class="field">
             <label for="note">メモ（任意）</label>
@@ -62,6 +62,52 @@
 
       <section id="tab-stats" class="tab-panel">
         <h2>集計・可視化</h2>
+
+        <div class="card">
+          <h3>過去1週間</h3>
+          <div class="two-col">
+            <div>
+              <div class="table-wrap">
+                <table id="summary-table-1w">
+                  <thead>
+                    <tr>
+                      <th>医師</th>
+                      <th>回数</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <canvas id="chart-1w" width="640" height="300" aria-label="過去1週間 回数チャート"></canvas>
+            </div>
+          </div>
+          <div class="stats-line" id="stats-line-1w"></div>
+        </div>
+
+        <div class="card">
+          <h3>過去1ヶ月</h3>
+          <div class="two-col">
+            <div>
+              <div class="table-wrap">
+                <table id="summary-table-1m">
+                  <thead>
+                    <tr>
+                      <th>医師</th>
+                      <th>回数</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <canvas id="chart-1m" width="640" height="300" aria-label="過去1ヶ月 回数チャート"></canvas>
+            </div>
+          </div>
+          <div class="stats-line" id="stats-line-1m"></div>
+        </div>
         <div class="filters">
           <div class="field">
             <label>期間</label>
@@ -106,6 +152,11 @@
             <button id="bulk-add">一括追加</button>
             <button id="clear-doctors" class="danger">医師リストを初期化</button>
           </div>
+          <div class="field">
+            <label>登録済み</label>
+            <div id="doctor-manage-list" class="chips"></div>
+            <p class="hint">削除しても既存の記録は残ります（選択候補から外れます）。</p>
+          </div>
         </div>
 
         <div class="card">
@@ -124,7 +175,7 @@
               CSVを読み込む
             </label>
           </div>
-          <p class="hint">CSV列: datetime(ISO),doctor,note</p>
+          <p class="hint">CSV列: datetime(ISO),doctor,note（doctorは「;」区切りで複数可）</p>
           <button id="clear-logs" class="danger">全記録を削除</button>
         </div>
       </section>
