@@ -9,13 +9,14 @@
   <body>
     <header>
       <h1>緊急手術 参加記録カウンター</h1>
-      <p class="subtitle">誰が何回緊急手術に入ったかを記録・見える化！</p>
+      <p class="subtitle">手術参加回数と疲労度を見える化！</p>
     </header>
 
     <main>
       <nav class="tabs">
         <button class="tab active" data-tab="log">記録する</button>
         <button class="tab" data-tab="stats">集計</button>
+        <button class="tab" data-tab="fatigue">疲労度</button>
         <button class="tab" data-tab="settings">設定</button>
         <button class="tab" data-tab="admin">管理</button>
       </nav>
@@ -33,11 +34,11 @@
           </div>
           <div class="field">
             <label for="datetime">手術終了時刻</label>
-            <input id="datetime" type="datetime-local" step="3600" required />
+            <input id="datetime" type="datetime-local" required />
           </div>
           <div class="field">
             <label for="note">メモ（任意）</label>
-            <input id="note" type="text" placeholder="症例名など" />
+            <input id="note" type="text" placeholder="術式など" />
           </div>
           <div class="actions">
             <button type="submit">記録する</button>
@@ -109,42 +110,43 @@
           </div>
           <div class="stats-line" id="stats-line-1m"></div>
         </div>
-        <div class="filters">
-          <div class="field">
-            <label>期間</label>
-            <input type="date" id="from-date" />
-            <span>〜</span>
-            <input type="date" id="to-date" />
-            <button id="apply-filter">反映</button>
-            <button id="reset-filter" class="secondary">リセット</button>
-          </div>
-        </div>
-
-        <div class="two-col">
-          <div>
-            <h3>医師別 回数</h3>
-            <div class="table-wrap">
-              <table id="summary-table">
-                <thead>
-                  <tr>
-                    <th data-sort="doctor">医師</th>
-                    <th data-sort="count">回数</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
+        <div class="card">
+          <h3>指定期間</h3>
+          <div class="filters">
+            <div class="field">
+              <label>期間</label>
+              <input type="date" id="from-date" />
+              <span>〜</span>
+              <input type="date" id="to-date" />
+              <button id="apply-filter">反映</button>
+              <button id="reset-filter" class="secondary">リセット</button>
             </div>
           </div>
-          <div>
-            <h3>バー・チャート</h3>
-            <canvas id="chart" width="640" height="360" aria-label="回数チャート"></canvas>
+
+          <div class="two-col">
+            <div>
+              <div class="table-wrap">
+                <table id="summary-table">
+                  <thead>
+                    <tr>
+                      <th data-sort="doctor">医師</th>
+                      <th data-sort="count">回数</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <canvas id="chart" width="640" height="360" aria-label="回数チャート"></canvas>
+            </div>
           </div>
+
+          <div class="stats-line" id="stats-line"></div>
         </div>
 
-        <div class="stats-line" id="stats-line"></div>
-
         <div class="card" style="margin-top:16px">
-          <h3>過去ログ検索（期間で一覧）</h3>
+          <h3>過去ログ検索</h3>
           <div class="field">
             <label>期間を指定</label>
             <input type="date" id="search-from" />
@@ -171,6 +173,15 @@
         </div>
       </section>
 
+      <section id="tab-fatigue" class="tab-panel">
+        <h2>疲労度</h2>
+        <div>
+          <h3>現在の疲労度</h3>
+          <canvas id="fatigue-chart" width="700" height="360" aria-label="現在の疲労度"></canvas>
+        </div>
+        <p class="hint">ルール: 直近7日で、各n日前の各時間帯について、参加1件ごとに 2×(時間帯の疲労係数)×(1/2)^n を加算した合計。</p>
+      </section>
+
       <section id="tab-settings" class="tab-panel">
         <h2>設定</h2>
         <div class="card">
@@ -182,12 +193,24 @@
             <span class="hint">サーバーモードでの監査ログに記録されます</span>
           </div>
         </div>
+
+        <div class="card">
+          <h3>疲労度設定</h3>
+          <div class="field">
+            <label>時間帯と疲労係数</label>
+            <div id="fatigue-bands"></div>
+            <div class="inline" style="margin-top:6px">
+              <button id="fatigue-add-band">時間帯を追加</button>
+              <button id="fatigue-reset-bands" class="secondary">デフォルトに戻す</button>
+              <span class="hint">例: 17:00-21:00 疲労係数1、21:01-09:00 疲労係数2（n=7固定、各バンドは (1/2)^n で減衰）</span>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <h3>医師リスト</h3>
           <div class="inline">
             <input id="bulk-doctors" type="text" placeholder="カンマ区切りで複数追加（例: 田中,佐藤,鈴木）" />
             <button id="bulk-add">一括追加</button>
-            <button id="clear-doctors" class="danger">医師リストを初期化</button>
           </div>
           <div class="field">
             <label>登録済み</label>

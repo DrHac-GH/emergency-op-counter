@@ -30,9 +30,9 @@
 
 - 医師リスト: ユニークな医師名の配列
 - 記録: `{ id, datetime(ISO8601), doctors: string[], note }`
-  - `datetime` は手術終了時刻（時単位、分は00固定）。旧データ `{ doctor: string }` も読み込み時に自動変換します。
+  - `datetime` は手術終了時刻（分単位、秒は00固定）。旧データ `{ doctor: string }` も読み込み時に自動変換します。
 
-CSVの列は `datetime,doctor,note`。`doctor` は複数名の場合は `;` 区切り（例: `山田;佐藤`）。`datetime` は ISO8601（例: `2025-01-31T12:34:00.000Z`）。表示は「YYYY/MM/DD HH時」に丸めて表示します。
+CSVの列は `datetime,doctor,note`。`doctor` は複数名の場合は `;` 区切り（例: `山田;佐藤`）。`datetime` はローカル時刻（例: `2025-01-31T12:34:00`）。表示は「YYYY/MM/DD HH:MM」です。
 
 ## 注意
 

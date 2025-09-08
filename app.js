@@ -44,17 +44,35 @@
       doctors = Array.isArray(d.doctors) ? d.doctors : [];
       const l = await apiGet('/api/logs');
       logs = Array.isArray(l.logs) ? l.logs : [];
+      try {
+        const fb = await apiGet('/api/fatigue-bands');
+        if (Array.isArray(fb.bands)) { fatigueBands = fb.bands; }
+      } catch {}
     } catch(e){ console.warn('Sync failed', e); }
   }
-  const formatDate = (iso) => {
-    const d = new Date(iso);
+  // Normalize stored datetime to local wall-time Date
+  function toLocalDate(stored){
+    if (!stored) return new Date('invalid');
+    const d = new Date(stored);
+    if (typeof stored === 'string' && stored.endsWith('Z')){
+      return new Date(d.getTime() + d.getTimezoneOffset()*60000);
+    }
+    return d;
+  }
+
+  const formatDate = (stored) => {
+    const d = toLocalDate(stored);
     if (Number.isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2,'0');
-    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}時`;
+    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
+  function formatLocalForStore(d){
+    const pad = (n) => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  }
   const nowLocalDatetime = () => {
     const d = new Date();
-    d.setMinutes(0,0,0);
+    d.setSeconds(0,0);
     const pad = (n) => String(n).padStart(2,'0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
@@ -71,11 +89,11 @@
   const clearSelectionBtn = $('#clear-selection');
   const bulkDoctorsInput = $('#bulk-doctors');
   const bulkAddBtn = $('#bulk-add');
-  const clearDoctorsBtn = $('#clear-doctors');
   const form = $('#log-form');
   const dtInput = $('#datetime');
   const noteInput = $('#note');
   const clearFormBtn = $('#clear-form');
+  const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
   const logsTableBody = $('#logs-table tbody');
   const searchFrom = $('#search-from');
   const searchTo = $('#search-to');
@@ -100,6 +118,75 @@
   const exportCsvBtn = $('#export-csv');
   const importCsvInput = $('#import-csv');
   const clearLogsBtn = $('#clear-logs');
+  // Fatigue tab elements
+  const fatigueChart = $('#fatigue-chart');
+  const fatigueBandsWrap = $('#fatigue-bands');
+  const fatigueAddBandBtn = $('#fatigue-add-band');
+  const fatigueResetBandsBtn = $('#fatigue-reset-bands');
+  // Fatigue bands config (persist)
+  const FATIGUE_BANDS_KEY = 'eop_fatigue_bands';
+  function defaultBands(){ return [ {start:'17:00', end:'21:00', weight:1}, {start:'21:01', end:'09:00', weight:2} ]; }
+  function loadBands(){ return load(FATIGUE_BANDS_KEY, defaultBands()); }
+  function saveBands(b){ save(FATIGUE_BANDS_KEY, b); }
+  let fatigueBands = loadBands();
+  function renderBandsUI(){
+    if (!fatigueBandsWrap) return;
+    const rows = fatigueBands.map((band, idx) => `
+      <div class="band-row" data-idx="${idx}">
+        <span>開始</span><input type="time" value="${band.start}" data-k="start">
+        <span>終了</span><input type="time" value="${band.end}" data-k="end">
+        <span>疲労係数</span><input type="number" value="${band.weight}" min="0" step="0.5" data-k="weight">
+        <button class="band-del">削除</button>
+      </div>
+    `).join('');
+    fatigueBandsWrap.innerHTML = `<div class="bands">${rows || '<span class=\"hint\">時間帯がありません。「時間帯を追加」を押してください</span>'}</div>`;
+  }
+  function readBandsFromUI(){
+    if (!fatigueBandsWrap) return fatigueBands;
+    const rows = Array.from(fatigueBandsWrap.querySelectorAll('.band-row'));
+    const out = [];
+    for (const r of rows){
+      const start = r.querySelector('input[data-k="start"]').value || '00:00';
+      const end = r.querySelector('input[data-k="end"]').value || '00:00';
+      const weight = parseFloat(r.querySelector('input[data-k="weight"]').value || '0') || 0;
+      out.push({start, end, weight: Math.max(0, weight)});
+    }
+    return out;
+  }
+  function bindBandsUI(){
+    if (!fatigueBandsWrap) return;
+    fatigueBandsWrap.addEventListener('input', async () => {
+      fatigueBands = readBandsFromUI();
+      if (serverMode) {
+        try { await apiPost('/api/fatigue-bands', { bands: fatigueBands }); } catch {}
+      } else {
+        saveBands(fatigueBands);
+      }
+      renderFatigue();
+    });
+    fatigueBandsWrap.addEventListener('click', (e) => {
+      const del = e.target.closest('.band-del');
+      if (del){
+        const row = e.target.closest('.band-row');
+        const idx = parseInt(row.dataset.idx, 10);
+        fatigueBands.splice(idx,1); saveBands(fatigueBands); renderBandsUI(); bindBandsUI(); renderFatigue();
+      }
+    });
+  }
+  if (fatigueAddBandBtn) fatigueAddBandBtn.addEventListener('click', async () => {
+    fatigueBands.push({start:'00:00', end:'00:00', weight:1});
+    if (serverMode) { try { await apiPost('/api/fatigue-bands', { bands: fatigueBands }); } catch {} }
+    else { saveBands(fatigueBands); }
+    renderBandsUI(); bindBandsUI(); renderFatigue();
+  });
+  if (fatigueResetBandsBtn) fatigueResetBandsBtn.addEventListener('click', async () => {
+    if (serverMode) {
+      try { const fb = await apiPost('/api/fatigue-bands/reset', {}); fatigueBands = Array.isArray(fb.bands)?fb.bands:defaultBands(); } catch { fatigueBands = defaultBands(); }
+    } else {
+      fatigueBands = defaultBands(); saveBands(fatigueBands);
+    }
+    renderBandsUI(); bindBandsUI(); renderFatigue();
+  });
   // operator and audit UI
   const operatorInput = $('#operator-name');
   const saveOperatorBtn = $('#save-operator');
@@ -115,6 +202,7 @@
   if (!dtInput.value) dtInput.value = nowLocalDatetime();
   if (!fromDate.value) fromDate.value = monthStartDate();
   if (!toDate.value) toDate.value = todayDate();
+  // No period controls; compute with default lookback
 
   // Renderers
   function renderDoctors(){
@@ -143,7 +231,7 @@
     const end = new Date(); end.setHours(23,59,59,999);
     const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0,0,0,0);
     const recent = getFilteredLogsRange(start, end);
-    const rows = [...recent].sort((a,b)=> b.datetime.localeCompare(a.datetime)).map(l => {
+    const rows = [...recent].sort((a,b)=> toLocalDate(b.datetime) - toLocalDate(a.datetime)).map(l => {
       const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
       const doctorText = ds.join('、');
       return `
@@ -151,17 +239,59 @@
         <td>${escapeHtml(formatDate(l.datetime))}</td>
         <td>${escapeHtml(doctorText)}</td>
         <td>${escapeHtml(l.note||'')}</td>
-        <td style="text-align:right"><button class="del-btn" data-del="${l.id}">削除</button></td>
+        <td style="text-align:right; display:flex; gap:6px; justify-content:flex-end">
+          <button class="secondary" data-edit="${l.id}">編集</button>
+          <button class="del-btn" data-del="${l.id}">削除</button>
+        </td>
       </tr>`;
     }).join('');
     logsTableBody.innerHTML = rows || '<tr><td colspan="4" style="color:#9fb3c8">記録はまだありません</td></tr>';
     // Bind delete
     logsTableBody.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => deleteLog(btn.dataset.del)));
+    // Bind edit
+    logsTableBody.querySelectorAll('button[data-edit]').forEach(btn => btn.addEventListener('click', () => startEdit(btn.dataset.edit)));
+  }
+
+  let editingId = null;
+  function toInputLocalString(stored){
+    const d = toLocalDate(stored);
+    const pad = (n) => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function startEdit(id){
+    const item = logs.find(x => x.id === id);
+    if (!item) return;
+    editingId = id;
+    // set inputs
+    if (dtInput) dtInput.value = toInputLocalString(item.datetime);
+    if (noteInput) noteInput.value = item.note || '';
+    // doctors selection: always all doctors shown; check those in item
+    const ds = Array.isArray(item.doctors) ? item.doctors : (item.doctor ? [item.doctor] : []);
+    document.querySelectorAll('#doctor-list input[type="checkbox"]').forEach(ch => { ch.checked = ds.includes(ch.value); });
+    // update UI
+    if (submitBtn) submitBtn.textContent = '更新';
+    if (clearFormBtn) clearFormBtn.textContent = '編集をキャンセル';
+  }
+
+  function cancelEdit(){
+    editingId = null;
+    if (submitBtn) submitBtn.textContent = '記録する';
+    if (clearFormBtn) clearFormBtn.textContent = 'クリア';
+    noteInput.value = '';
+    dtInput.value = nowLocalDatetime();
+    document.querySelectorAll('#doctor-list input[type="checkbox"]').forEach(ch => { ch.checked = false; });
   }
 
   function renderSearchLogs(){
     const { f, t } = getSearchRange();
-    const list = getFilteredLogsRange(f, t).sort((a,b)=> b.datetime.localeCompare(a.datetime));
+    if (!f && !t) {
+      if (searchLogsBody) {
+        searchLogsBody.innerHTML = '<tr><td colspan="3" style="color:#9fb3c8">期間を指定してください</td></tr>';
+      }
+      return;
+    }
+    const list = getFilteredLogsRange(f, t).sort((a,b)=> toLocalDate(b.datetime) - toLocalDate(a.datetime));
     const rows = list.map(l => {
       const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
       const doctorText = ds.join('、');
@@ -182,7 +312,7 @@
     const f = fromDate.value ? new Date(fromDate.value + 'T00:00:00') : null;
     const t = toDate.value ? new Date(toDate.value + 'T23:59:59.999') : null;
     return logs.filter(l => {
-      const d = new Date(l.datetime);
+      const d = toLocalDate(l.datetime);
       if (f && d < f) return false;
       if (t && d > t) return false;
       return true;
@@ -191,7 +321,7 @@
 
   function getFilteredLogsRange(f, t){
     return logs.filter(l => {
-      const d = new Date(l.datetime);
+      const d = toLocalDate(l.datetime);
       if (f && d < f) return false;
       if (t && d > t) return false;
       return true;
@@ -199,6 +329,16 @@
   }
 
   function renderSummary(){
+    // When no period specified, do not show table/chart
+    if (!fromDate.value && !toDate.value) {
+      summaryBody.innerHTML = '<tr><td colspan="2" style="color:#6b7280">期間を指定してください</td></tr>';
+      statsLine.textContent = '';
+      if (chart) {
+        const ctx = chart.getContext('2d');
+        ctx.clearRect(0,0,chart.width,chart.height);
+      }
+      return;
+    }
     const filtered = getFilteredLogs();
     const counts = new Map();
     filtered.forEach(l => {
@@ -227,7 +367,7 @@
     // padding
     const pad = { t: 20, r: 16, b: 40, l: 100 };
     // Draw axes
-    ctx.fillStyle = '#9fb3c8';
+    ctx.fillStyle = '#4b5563';
     ctx.font = '12px system-ui';
     // compute
     const max = Math.max(1, ...list.map(d => d.count));
@@ -235,13 +375,13 @@
     const barAreaH = h - pad.t - pad.b;
     const barH = Math.min(28, (barAreaH / Math.max(1,list.length)) - 6);
     // grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
     ctx.lineWidth = 1;
     const gridSteps = Math.min(10, max);
     for(let i=0;i<=gridSteps;i++){
       const x = pad.l + (i / gridSteps) * barAreaW;
       ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h-pad.b); ctx.stroke();
-      ctx.fillStyle = '#9fb3c8';
+      ctx.fillStyle = '#4b5563';
       const label = Math.round((i/gridSteps)*max);
       ctx.fillText(String(label), x-6, h-pad.b+16);
     }
@@ -250,17 +390,24 @@
       const y = pad.t + idx * (barH + 6);
       const bw = (d.count / max) * barAreaW;
       // label
-      ctx.fillStyle = '#9fb3c8';
+      ctx.fillStyle = '#4b5563';
       ctx.textAlign = 'right';
       ctx.fillText(d.doctor, pad.l - 10, y + barH - 6);
       // bar
       const grd = ctx.createLinearGradient(pad.l,0,pad.l+bw,0);
-      grd.addColorStop(0, '#2eaadc');
-      grd.addColorStop(1, '#65d48b');
+      if (canvas && canvas.id === 'fatigue-chart') {
+        // Orange to Red for fatigue chart
+        grd.addColorStop(0, '#f59e0b');
+        grd.addColorStop(1, '#ef4444');
+      } else {
+        // Default blue to green
+        grd.addColorStop(0, '#2eaadc');
+        grd.addColorStop(1, '#65d48b');
+      }
       ctx.fillStyle = grd;
       ctx.fillRect(pad.l, y, Math.max(2,bw), barH);
       // count
-      ctx.fillStyle = '#e7eef8';
+      ctx.fillStyle = '#111827';
       ctx.textAlign = 'left';
       ctx.fillText(String(d.count), pad.l + bw + 6, y + barH - 6);
     });
@@ -325,17 +472,10 @@
     }
   });
 
-  clearDoctorsBtn.addEventListener('click', () => {
-    if (!confirm('医師リストを初期化します。よろしいですか？')) return;
-    if (serverMode) {
-      apiPost('/api/doctors/reset', {}).then(async () => { await syncFromServer(); renderDoctors(); }).catch(()=> alert('サーバー処理に失敗しました'));
-    } else {
-      doctors = [];
-      renderDoctors();
-    }
-  });
+  // 初期化ボタンは廃止
 
   clearFormBtn.addEventListener('click', () => {
+    if (editingId) { cancelEdit(); return; }
     noteInput.value = '';
     dtInput.value = nowLocalDatetime();
   });
@@ -351,53 +491,63 @@
     e.preventDefault();
     const selectedDoctors = Array.from(doctorList.querySelectorAll('input[type="checkbox"]:checked')).map(i=>i.value);
     const datetime = dtInput.value ? new Date(dtInput.value) : new Date();
-    // 分は扱わない（時単位）。入力が分付きでも切り捨てる。
-    datetime.setMinutes(0,0,0);
+    // 秒は00固定
+    datetime.setSeconds(0,0);
     if (selectedDoctors.length === 0) { alert('参加医師を1名以上選択してください'); return; }
     if (Number.isNaN(datetime.getTime())) { alert('日時が不正です'); return; }
     const note = (noteInput.value||'').trim();
-    const iso = new Date(datetime.getTime() - datetime.getTimezoneOffset()*60000).toISOString();
+    const localStr = formatLocalForStore(datetime);
+    let id = editingId || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    if (editingId) {
+      // Optimistic update replace
+      logs = logs.map(l => l.id === editingId ? { id, datetime: localStr, doctors: selectedDoctors, note } : l);
+    } else {
+      // Optimistic add
+      logs.push({ id, datetime: localStr, doctors: selectedDoctors, note });
+    }
+    // ensure doctors exist
+    let changed = false;
+    selectedDoctors.forEach(d => { if (!doctors.includes(d)) { doctors.push(d); changed = true; } });
+    if (changed) renderDoctors();
+    if (!serverMode) save(storageKeys.logs, logs);
+    renderLogs();
+    renderSummary();
+    renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+    renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+    renderFatigue();
     if (serverMode) {
-      apiPost('/api/logs', { datetime: iso, doctors: selectedDoctors, note }).then(async () => {
+      const doServer = async () => {
+        if (editingId) { try { await apiDelete('/api/logs/' + encodeURIComponent(id)); } catch {} }
+        await apiPost('/api/logs', { id, datetime: localStr, doctors: selectedDoctors, note });
+      };
+      doServer().then(async () => {
         await syncFromServer();
-        renderDoctors(); renderLogs(); renderSummary();
+        renderLogs(); renderSummary();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
-      }).catch(()=> alert('サーバーへの保存に失敗しました'));
-    } else {
-      const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-      logs.push({ id, datetime: iso, doctors: selectedDoctors, note });
-      // ensure doctors exist
-      let changed = false;
-      selectedDoctors.forEach(d => { if (!doctors.includes(d)) { doctors.push(d); changed = true; } });
-      if (changed) renderDoctors();
-      save(storageKeys.logs, logs);
-      renderLogs();
-      renderSummary();
-      renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
-      renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+        renderFatigue();
+      }).catch(async ()=> { alert('サーバーへの保存に失敗しました'); await syncFromServer(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderFatigue(); });
     }
-    noteInput.value = '';
-    dtInput.value = nowLocalDatetime();
-    doctorList.querySelectorAll('input[type="checkbox"]').forEach(ch => ch.checked = false);
+    cancelEdit();
   });
 
   function deleteLog(id){
     if (!confirm('この記録を削除しますか？')) return;
+    // Optimistic local removal
+    logs = logs.filter(l => l.id !== id);
+    if (!serverMode) save(storageKeys.logs, logs);
+    renderLogs(); renderSummary();
+    renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+    renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+    renderFatigue();
     if (serverMode) {
       apiDelete('/api/logs/' + encodeURIComponent(id)).then(async () => {
         await syncFromServer();
         renderLogs(); renderSummary();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
-      }).catch(()=> alert('サーバー削除に失敗しました'));
-    } else {
-      logs = logs.filter(l => l.id !== id);
-      save(storageKeys.logs, logs);
-      renderLogs();
-      renderSummary();
-      renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
-      renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+        renderFatigue();
+      }).catch(async ()=> { alert('サーバー削除に失敗しました'); await syncFromServer(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderFatigue(); });
     }
   }
 
@@ -421,7 +571,7 @@
   if (searchResetBtn) searchResetBtn.addEventListener('click', () => { if (searchFrom) searchFrom.value=''; if (searchTo) searchTo.value=''; renderSearchLogs(); });
   if (exportSearchCsvBtn) exportSearchCsvBtn.addEventListener('click', () => {
     const { f, t } = getSearchRange();
-    const list = getFilteredLogsRange(f, t).sort((a,b)=> b.datetime.localeCompare(a.datetime));
+    const list = getFilteredLogsRange(f, t).sort((a,b)=> toLocalDate(b.datetime) - toLocalDate(a.datetime));
     const lines = [ ['datetime','doctor','note'].join(',') ];
     list.forEach(l => {
       const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
@@ -505,6 +655,7 @@
         renderDoctors(); renderLogs(); renderSummary();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+        renderFatigue();
       } else {
         logs = newLogs;
         // update doctors as union
@@ -515,6 +666,7 @@
         renderDoctors(); renderLogs(); renderSummary();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+        renderFatigue();
       }
     } catch(err) {
       alert('CSVの読み込みに失敗しました');
@@ -526,11 +678,11 @@
   clearLogsBtn.addEventListener('click', () => {
     if (!confirm('全記録を削除します。よろしいですか？')) return;
     if (serverMode) {
-      apiPost('/api/logs/clear', {}).then(async () => { await syncFromServer(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs(); }).catch(()=> alert('サーバー処理に失敗しました'));
+      apiPost('/api/logs/clear', {}).then(async () => { await syncFromServer(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs(); renderFatigue(); }).catch(()=> alert('サーバー処理に失敗しました'));
     } else {
       logs = [];
       save(storageKeys.logs, logs);
-      renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs();
+      renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs(); renderFatigue();
     }
   });
 
@@ -579,14 +731,153 @@
     try { await detectServer(); } catch {}
     if (serverMode) { await syncFromServer(); }
     if (doctors.length === 0) doctors = [];
+    renderBandsUI();
+    bindBandsUI();
     renderDoctors();
     renderLogs();
     renderSummary();
     renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
     renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     renderSearchLogs();
+    renderFatigue();
     renderAudit();
     // simple polling to reflect others' changes
-    if (serverMode) setInterval(async ()=>{ await syncFromServer(); renderDoctors(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs(); renderAudit(); }, 30000);
+    if (serverMode) setInterval(async ()=>{ await syncFromServer(); renderBandsUI(); renderDoctors(); renderLogs(); renderSummary(); renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7); renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30); renderSearchLogs(); renderFatigue(); renderAudit(); }, 30000);
   })();
+
+  // Fatigue logic
+  function renderFatigue(){
+    if (!fatigueChart) return;
+    // 常に今日を対象（現在時点の疲労度）。n=7で固定。
+    const N = 7;
+    const start = new Date(); start.setDate(start.getDate() - N); start.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0,0,0,0);
+    // Doctors to include: all doctors
+    const names = doctors.slice();
+    // 現在時点での値を算出（一般化バンド）
+    const now = new Date();
+    fatigueBands = readBandsFromUI();
+    if (!fatigueBands || fatigueBands.length === 0) fatigueBands = defaultBands();
+    const currentValues = computeFatigueCurrentGeneral(names, N, fatigueBands, now);
+    const list = names.map((doctor, i) => ({ doctor, count: currentValues[i] || 0 })).sort((a,b)=> b.count - a.count);
+    drawChart(fatigueChart, list);
+  }
+
+  function computeFatigueCurrent(targetDoctors, N, a, b, now){
+    const todayLocal = new Date(now); todayLocal.setHours(0,0,0,0);
+    const minLocal = new Date(todayLocal); minLocal.setDate(minLocal.getDate() - N);
+    const parsed = logs.map(l => ({ t: toLocalDate(l.datetime), doctors: Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []) }));
+    const relevant = parsed.filter(x => x.t >= minLocal && x.t <= now);
+    const values = targetDoctors.map(()=>0);
+    for (let i=0;i<targetDoctors.length;i++){
+      const name = targetDoctors[i];
+      let sum = 0;
+      for (let n=1;n<=N;n++){
+        const decay = Math.pow(0.5, n);
+        const baseLocal = new Date(todayLocal); baseLocal.setDate(todayLocal.getDate()-n);
+        const nextLocal = new Date(todayLocal); nextLocal.setDate(todayLocal.getDate()-(n-1));
+        const eveStart = new Date(baseLocal.getFullYear(), baseLocal.getMonth(), baseLocal.getDate(), 17, 0, 0, 0);
+        const eveEnd = new Date(baseLocal.getFullYear(), baseLocal.getMonth(), baseLocal.getDate(), 21, 0, 0, 0);
+        const nightStart = new Date(baseLocal.getFullYear(), baseLocal.getMonth(), baseLocal.getDate(), 21, 0, 0, 0);
+        const nightEnd = new Date(nextLocal.getFullYear(), nextLocal.getMonth(), nextLocal.getDate(), 9, 0, 0, 0);
+        relevant.forEach(x => {
+          if (!x.doctors.includes(name)) return;
+          const t = x.t;
+          if (t >= eveStart && t < eveEnd) sum += 2*a*decay;
+          else if (t >= nightStart && t < nightEnd) sum += 2*b*decay;
+        });
+      }
+      values[i] = sum;
+    }
+    return values;
+  }
+
+  function computeFatigueCurrentGeneral(targetDoctors, N, bands, now){
+    const todayLocal = new Date(now); todayLocal.setHours(0,0,0,0);
+    const minLocal = new Date(todayLocal); minLocal.setDate(minLocal.getDate() - N);
+    const parsed = logs.map(l => ({ t: toLocalDate(l.datetime), doctors: Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []) }));
+    const relevant = parsed.filter(x => x.t >= minLocal && x.t <= now);
+    const values = targetDoctors.map(()=>0);
+    const parseHM = (s) => { const [hh,mm] = (s||'0:0').split(':').map(x=>parseInt(x,10)||0); return {hh,mm}; };
+    for (let i=0;i<targetDoctors.length;i++){
+      const name = targetDoctors[i];
+      let sum = 0;
+      for (let n=1;n<=N;n++){
+        const decay = Math.pow(0.5, n);
+        const baseLocal = new Date(todayLocal); baseLocal.setDate(todayLocal.getDate()-n);
+        const nextLocal = new Date(todayLocal); nextLocal.setDate(todayLocal.getDate()-(n-1));
+        for (const band of bands){
+          const {hh:sh, mm:sm} = parseHM(band.start);
+          const {hh:eh, mm:em} = parseHM(band.end);
+          const weight = Math.max(0, Number(band.weight)||0);
+          const startEnc = new Date(baseLocal.getFullYear(), baseLocal.getMonth(), baseLocal.getDate(), sh, sm, 0, 0);
+          const crosses = (eh*60+em) <= (sh*60+sm);
+          const endDay = crosses ? nextLocal : baseLocal;
+          const endEnc = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate(), eh, em, 0, 0);
+          relevant.forEach(x => {
+            if (!x.doctors.includes(name)) return;
+            const t = x.t;
+            if (t >= startEnc && t < endEnc) sum += 2*weight*decay;
+          });
+        }
+      }
+      values[i] = sum;
+    }
+    return values;
+  }
+
+  function computeFatigueSeries(targetDoctors, from, to){
+    // Determine day range
+    const endDay = new Date(to || new Date()); endDay.setHours(0,0,0,0);
+    const startDay = new Date(from || new Date(endDay)); startDay.setHours(0,0,0,0);
+    // Expand to include previous day for first window
+    const windowStart = new Date(startDay); windowStart.setDate(startDay.getDate()-1); windowStart.setHours(17,0,0,0);
+    const windowEnd = new Date(endDay); windowEnd.setHours(9,1,0,0);
+    // Filter logs in needed span
+    const spanLogs = logs.filter(l => {
+      const d = new Date(l.datetime);
+      return d >= windowStart && d <= windowEnd;
+    });
+    // Index by doctor
+    const perDoc = new Map();
+    targetDoctors.forEach(d => perDoc.set(d, []));
+    spanLogs.forEach(l => {
+      const d = new Date(l.datetime);
+      const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
+      ds.forEach(name => { if (perDoc.has(name)) perDoc.get(name).push(d); });
+    });
+    // Sort timestamps
+    perDoc.forEach(list => list.sort((a,b)=> a-b));
+    // Iterate days
+    const dates = [];
+    const acc = targetDoctors.map(()=>0);
+    const values = targetDoctors.map(()=>[]);
+    for (let day = new Date(startDay); day <= endDay; day.setDate(day.getDate()+1)){
+      const dCopy = new Date(day);
+      // 09:00 halve then 09:01 add
+      for (let i=0;i<acc.length;i++){ acc[i] = acc[i] * 0.5; }
+      // windows
+      const prevStart = new Date(day); prevStart.setDate(day.getDate()-1); prevStart.setHours(17,0,0,0);
+      const prevNight = new Date(day); prevNight.setDate(day.getDate()-1); prevNight.setHours(22,0,0,0);
+      const morningEnd = new Date(day); morningEnd.setHours(9,1,0,0); // include up to 09:00
+      for (let i=0;i<targetDoctors.length;i++){
+        const name = targetDoctors[i];
+        const times = perDoc.get(name) || [];
+        // +1 for [17:00, 22:00)
+        let add = 0;
+        for (const t0 of times){ if (t0 >= prevStart && t0 < prevNight) add += 1; else if (t0 >= prevNight && t0 < morningEnd) add += 2; }
+        acc[i] += add;
+        values[i].push(acc[i]);
+      }
+      // record at 09:01
+      dates.push(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 1, 0, 0));
+    }
+    return { dates, doctors: targetDoctors, values };
+  }
+
+  // drawFatigueChart removed; use drawChart() to render horizontal bars
+
+  // Fatigue controls
+  // No per-doctor selection; always show all
+  // bands UI change is handled in bindBandsUI via input events
 })();

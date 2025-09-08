@@ -16,10 +16,11 @@ function loadData(){
     const obj = JSON.parse(txt);
     if (!obj.doctors || !Array.isArray(obj.doctors)) obj.doctors = [];
     if (!obj.logs || !Array.isArray(obj.logs)) obj.logs = [];
+    if (!obj.fatigueBands || !Array.isArray(obj.fatigueBands)) obj.fatigueBands = defaultBands();
     if (!obj.audit || !Array.isArray(obj.audit)) obj.audit = [];
     return obj;
   } catch (e) {
-    return { doctors: [], logs: [], audit: [] };
+    return { doctors: [], logs: [], fatigueBands: defaultBands(), audit: [] };
   }
 }
 
@@ -78,6 +79,10 @@ function auditAppend(data, entry){
   if (data.audit.length > 5000) {
     data.audit = data.audit.slice(-5000); // keep last 5000
   }
+}
+
+function defaultBands(){
+  return [ { start:'17:00', end:'21:00', weight:1 }, { start:'21:01', end:'09:00', weight:2 } ];
 }
 
 function csvEscape(v){
@@ -144,13 +149,34 @@ const server = http.createServer(async (req, res) => {
       }).sort((a,b)=> b.datetime.localeCompare(a.datetime));
       return send(res, 200, {logs: list});
     }
+    // Fatigue bands
+    if (pathname === '/api/fatigue-bands' && req.method === 'GET'){
+      return send(res, 200, { bands: data.fatigueBands || defaultBands() });
+    }
+    if (pathname === '/api/fatigue-bands' && req.method === 'POST'){
+      const body = await parseBody(req) || {};
+      const bands = Array.isArray(body.bands) ? body.bands : [];
+      const valid = bands.every(b => b && typeof b.start==='string' && typeof b.end==='string' && typeof b.weight!=='undefined');
+      if (!valid) return badRequest(res, 'invalid_bands');
+      data.fatigueBands = bands.map(b => ({ start: String(b.start), end: String(b.end), weight: Number(b.weight)||0 }));
+      auditAppend(data, { id: Date.now()+":bset", ts: new Date().toISOString(), actor: getActor(req, body), action: 'bands_set', details: JSON.stringify(data.fatigueBands) });
+      saveData(data);
+      return send(res, 200, { bands: data.fatigueBands });
+    }
+    if (pathname === '/api/fatigue-bands/reset' && req.method === 'POST'){
+      const body = await parseBody(req) || {};
+      data.fatigueBands = defaultBands();
+      auditAppend(data, { id: Date.now()+":breset", ts: new Date().toISOString(), actor: getActor(req, body), action: 'bands_reset', details: '' });
+      saveData(data);
+      return send(res, 200, { bands: data.fatigueBands });
+    }
     if (pathname === '/api/logs' && req.method === 'POST'){
       const body = await parseBody(req) || {};
       const doctors = Array.isArray(body.doctors) ? body.doctors.filter(Boolean) : [];
       const datetime = body.datetime;
       if (!datetime || !doctors.length) return badRequest(res, 'invalid_payload');
       const note = typeof body.note === 'string' ? body.note : '';
-      const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      const id = body.id || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const log = { id, datetime, doctors, note };
       data.logs.push(log);
       // ensure doctors set includes all
