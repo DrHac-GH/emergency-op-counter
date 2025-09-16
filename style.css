@@ -3,12 +3,13 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+@media (max-width:480px){html,body{font-size:16px}}
 header{padding:20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#ffffff 0%, #f3f6fb 100%);text-align:center}
-h1{margin:0;font-size:20px}
+h1{margin:0;font-size:22px}
 .subtitle{margin:4px 0 0;color:var(--muted)}
 main{max-width:1000px;margin:0 auto;padding:16px}
 
-.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tab{background:var(--panel);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:8px;cursor:pointer}
 .tab.active{background:var(--primary);border-color:var(--primary);color:#ffffff}
 
@@ -18,21 +19,22 @@ main{max-width:1000px;margin:0 auto;padding:16px}
 .field{margin:10px 0}
 label{display:block;margin-bottom:6px;color:var(--muted)}
 input,select,button{font:inherit}
-input,select{background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
+input,select{background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;width:100%;min-height:40px}
 select{max-width:260px}
 input[type="datetime-local"], input[type="date"]{max-width:220px}
 
-.inline{display:flex;gap:8px;align-items:center}
-.checklist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.checklist label{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:8px}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.checklist{display:grid;grid-template-columns:repeat(auto-fill,80px);gap:8px;margin-bottom:8px;justify-content:flex-start}
+.checklist label{display:flex;align-items:center;justify-content:center;gap:4px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;width:80px;height:45px;text-align:center;padding:0;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .checklist input[type="checkbox"]{accent-color:var(--accent)}
+.checklist input[type="checkbox"]{width:1.1em;height:1.1em;min-width:1.1em;min-height:1.1em}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:999px}
 .chip-del{background:#fde8e7;border:1px solid #f5b5b3;color:#8a1c1a;padding:2px 8px;border-radius:999px;cursor:pointer}
 .chip-del:hover{background:#fbd0cf}
 .actions{display:flex;gap:8px;margin-top:12px}
-button{background:var(--primary);border:none;color:#ffffff;padding:8px 12px;border-radius:8px;cursor:pointer}
+button{background:var(--primary);border:none;color:#ffffff;padding:10px 14px;border-radius:10px;cursor:pointer;min-height:40px}
 button.secondary{background:#e6eef7;color:#1f2937}
 button.danger{background:var(--danger);color:#ffffff}
 button:disabled{opacity:.6;cursor:not-allowed}
@@ -40,6 +42,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:#ffffff}
 table{border-collapse:separate;border-spacing:0;width:100%}
 th,td{padding:10px 12px;border-bottom:1px solid var(--border)}
+td{word-break:break-word}
 thead th{position:sticky;top:0;background:var(--panel)}
 tbody tr:hover{background:#f8fafc}
 th[data-sort]{cursor:pointer}
@@ -70,3 +73,6 @@ footer{max-width:1000px;margin:10px auto 30px;padding:0 16px;color:var(--muted)}
 .band-row{display:flex;gap:8px;align-items:center;background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:8px;flex-wrap:wrap}
 .band-row input[type="time"], .band-row input[type="number"]{max-width:120px}
 .band-del{background:#fde8e7;border:1px solid #f5b5b3;color:#8a1c1a;padding:6px 8px;border-radius:8px;cursor:pointer}
+
+/* Canvas responsive */
+canvas{max-width:100%;height:auto;display:block}

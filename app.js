@@ -27,9 +27,10 @@
   function load(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
   const uniq = (arr) => Array.from(new Set(arr)).filter(Boolean);
   function actorParam(){ return operatorName ? `actor=${encodeURIComponent(operatorName)}` : ''; }
+  // multi-facility features removed
   async function apiGet(path){ const r = await fetch(path, {credentials:'same-origin'}); if(!r.ok) throw new Error('GET '+path); return r.json(); }
   async function apiPost(path, body){ const payload = Object.assign({}, body||{}, operatorName ? {actor: operatorName} : {}); const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload), credentials:'same-origin'}); if(!r.ok) throw new Error('POST '+path); return r.json(); }
-  async function apiDelete(path){ const url = actorParam() ? (path + (path.includes('?')?'&':'?') + actorParam()) : path; const r = await fetch(url, {method:'DELETE', credentials:'same-origin'}); if(!r.ok) throw new Error('DELETE '+path); return r.json(); }
+  async function apiDelete(path){ const r = await fetch(path, {method:'DELETE', credentials:'same-origin'}); if(!r.ok) throw new Error('DELETE '+path); return r.json(); }
   async function detectServer(){
     try{
       const res = await fetch('/api/ping', {method:'GET'});
@@ -190,6 +191,7 @@
   // operator and audit UI
   const operatorInput = $('#operator-name');
   const saveOperatorBtn = $('#save-operator');
+  
   const auditTbody = $('#audit-table tbody');
   const refreshAuditBtn = $('#refresh-audit');
   const exportAuditLink = $('#export-audit');
@@ -197,6 +199,7 @@
   // Operator name (for audit actor)
   let operatorName = load('eop_actor', '') || '';
   if (operatorInput) operatorInput.value = operatorName;
+  
 
   // Init defaults
   if (!dtInput.value) dtInput.value = nowLocalDatetime();
@@ -295,10 +298,12 @@
     const rows = list.map(l => {
       const ds = Array.isArray(l.doctors) ? l.doctors : (l.doctor ? [l.doctor] : []);
       const doctorText = ds.join('、');
-      return `<tr><td>${escapeHtml(formatDate(l.datetime))}</td><td>${escapeHtml(doctorText)}</td><td>${escapeHtml(l.note||'')}</td></tr>`;
+      return `<tr data-id="${l.id}"><td>${escapeHtml(formatDate(l.datetime))}</td><td>${escapeHtml(doctorText)}</td><td>${escapeHtml(l.note||'')}</td><td style=\"text-align:right\"><button class=\"del-btn\" data-del=\"${l.id}\">削除</button></td></tr>`;
     }).join('');
     if (searchLogsBody) {
-      searchLogsBody.innerHTML = rows || '<tr><td colspan="3" style="color:#9fb3c8">該当データなし</td></tr>';
+      searchLogsBody.innerHTML = rows || '<tr><td colspan="4" style="color:#9fb3c8">該当データなし</td></tr>';
+      // bind actions
+      searchLogsBody.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => deleteLog(btn.dataset.del)));
     }
   }
 
@@ -329,6 +334,7 @@
   }
 
   function renderSummary(){
+    if (chart) syncCanvasSize(chart);
     // When no period specified, do not show table/chart
     if (!fromDate.value && !toDate.value) {
       summaryBody.innerHTML = '<tr><td colspan="2" style="color:#6b7280">期間を指定してください</td></tr>';
@@ -414,6 +420,7 @@
   }
 
   function renderQuickRange(title, tbodyEl, canvasEl, statsEl, days){
+    if (canvasEl) syncCanvasSize(canvasEl);
     // days: number of days back inclusive (e.g., 7 for 1w, 30 for 1m)
     const end = new Date(); end.setHours(23,59,59,999);
     const start = new Date(end); start.setDate(end.getDate() - (days - 1)); start.setHours(0,0,0,0);
@@ -486,6 +493,7 @@
       alert('操作者名を保存しました');
     });
   }
+  
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -515,6 +523,7 @@
     renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
     renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     renderFatigue();
+    renderSearchLogs();
     if (serverMode) {
       const doServer = async () => {
         if (editingId) { try { await apiDelete('/api/logs/' + encodeURIComponent(id)); } catch {} }
@@ -522,7 +531,7 @@
       };
       doServer().then(async () => {
         await syncFromServer();
-        renderLogs(); renderSummary();
+        renderLogs(); renderSummary(); renderSearchLogs();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
         renderFatigue();
@@ -536,14 +545,14 @@
     // Optimistic local removal
     logs = logs.filter(l => l.id !== id);
     if (!serverMode) save(storageKeys.logs, logs);
-    renderLogs(); renderSummary();
+    renderLogs(); renderSummary(); renderSearchLogs();
     renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
     renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
     renderFatigue();
     if (serverMode) {
       apiDelete('/api/logs/' + encodeURIComponent(id)).then(async () => {
         await syncFromServer();
-        renderLogs(); renderSummary();
+        renderLogs(); renderSummary(); renderSearchLogs();
         renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
         renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
         renderFatigue();
@@ -748,6 +757,7 @@
   // Fatigue logic
   function renderFatigue(){
     if (!fatigueChart) return;
+    syncCanvasSize(fatigueChart);
     // 常に今日を対象（現在時点の疲労度）。n=7で固定。
     const N = 7;
     const start = new Date(); start.setDate(start.getDate() - N); start.setHours(0,0,0,0);
@@ -762,6 +772,25 @@
     const list = names.map((doctor, i) => ({ doctor, count: currentValues[i] || 0 })).sort((a,b)=> b.count - a.count);
     drawChart(fatigueChart, list);
   }
+
+  function syncCanvasSize(c){
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = c.clientWidth || c.width || 640;
+    const cssH = c.clientHeight || c.height || 300;
+    c.width = Math.max(300, Math.floor(cssW * dpr));
+    c.height = Math.max(180, Math.floor(cssH * dpr));
+  }
+
+  let _resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      renderSummary();
+      renderQuickRange('過去1週間', summaryBody1w, chart1w, statsLine1w, 7);
+      renderQuickRange('過去1ヶ月', summaryBody1m, chart1m, statsLine1m, 30);
+      renderFatigue();
+    }, 150);
+  });
 
   function computeFatigueCurrent(targetDoctors, N, a, b, now){
     const todayLocal = new Date(now); todayLocal.setHours(0,0,0,0);
